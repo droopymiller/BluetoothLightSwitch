@@ -10,7 +10,12 @@
 #define TX_PIN 9
 SoftwareSerial mySerial(RX_PIN, TX_PIN); // RX, TX
 
-boolean lightState;
+boolean lightState = false;
+char PASSWORD[21] = "manmilk\r";
+
+const byte numChars = 32;
+char receivedChars[numChars]; // an array to store the received data
+boolean newData = false; //Variable for if a new line of data has been receive
 
 void setup() {
   Serial.begin(9600);
@@ -33,27 +38,77 @@ void setup() {
 
 void loop() {
   boolean switchState = digitalRead(SWITCH_PIN);
-
-  relayState(lightState);
+  relayState();
   
   //Interface serial outputs
-  if (mySerial.available()) {
+  serialInterface();
+  //Receive Data
+  recvWithEndMarker();
+  //Check Data for password
+  checkForPassword();
+}
+
+//Interfaces USB serial to bluetooth serial
+void serialInterface(){
+  /*if (mySerial.available()) {
     Serial.write(mySerial.read());
-  }
+  }*/
   if (Serial.available()) {
-    mySerial.write(Serial.read());
+    mySerial.write(Serial.read()); 
   }
-
 }
 
+//Receives data with end of line marker
+void recvWithEndMarker() {
+  static byte ndx = 0;
+  char endMarker = '\n';
+  char rc;
+ 
 
+  while (mySerial.available() > 0 && newData == false) {
+    //Serial.write(mySerial.read());
+    rc = mySerial.read();
 
-
-void changeLightState(boolean lightState){
-  lightState != lightState;
+    if (rc != endMarker) {
+      receivedChars[ndx] = rc;
+      ndx++;
+      if (ndx >= numChars) {
+        ndx = numChars - 1;
+      }
+    }
+    else {
+    receivedChars[ndx] = '\0'; // terminate the string
+    ndx = 0;
+    newData = true;
+    }
+  }
 }
 
-void relayState(boolean lightState){
+//Checks if password matches received data, resets newData
+void checkForPassword(){
+  if (newData){
+        Serial.println(receivedChars);
+        Serial.print("Difference: ");
+        Serial.println(strcmp(receivedChars, PASSWORD));
+    if(strcmp(receivedChars, PASSWORD) == 0){
+      changeLightState();
+      mySerial.write("Correct Password\r\n");
+    }
+    else{
+      mySerial.write("Incorrect Password\r\n");
+    }
+  }
+  newData = false;
+}
+
+//Changes lightState when called
+void changeLightState(){
+  lightState = !lightState;
+  //digitalWrite(13, lightState);
+}
+
+//Switch relay based on lightState
+void relayState(){
   digitalWrite(RELAY_PIN, lightState);
 }
 
