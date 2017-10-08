@@ -16,6 +16,12 @@ char PASSWORD[21] = "manmilk\r";
 const byte numChars = 32;
 char receivedChars[numChars]; // an array to store the received data
 boolean newData = false; //Variable for if a new line of data has been receive
+boolean switchState; //Current State of button
+boolean actuated = false; //Previous state of button
+
+unsigned long currentMillis;
+unsigned long previousMillis;
+const int debounceInt = 3000;
 
 void setup() {
   Serial.begin(9600);
@@ -37,9 +43,8 @@ void setup() {
 }
 
 void loop() {
-  boolean switchState = digitalRead(SWITCH_PIN);
   relayState();
-  
+  checkSwitch();
   //Interface serial outputs
   serialInterface();
   //Receive Data
@@ -110,5 +115,22 @@ void changeLightState(){
 //Switch relay based on lightState
 void relayState(){
   digitalWrite(RELAY_PIN, lightState);
+}
+
+void checkSwitch(){
+  switchState = digitalRead(SWITCH_PIN);
+  currentMillis = millis();
+  if (!switchState){
+    if(!actuated){
+      previousMillis = millis();
+    }
+    if (currentMillis - previousMillis >= debounceInt){
+      changeLightState();
+      actuated = true;
+    }
+  }
+  if (switchState){
+    actuated = false;
+  }
 }
 
