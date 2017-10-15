@@ -11,17 +11,22 @@
 SoftwareSerial mySerial(RX_PIN, TX_PIN); // RX, TX
 
 boolean lightState = false;
-char PASSWORD[21] = "manmilk\r";
+char password[21] = "manmilk\r";
+char debugPWD[21] = "RAWDOG\r";
 
 const byte numChars = 32;
 char receivedChars[numChars]; // an array to store the received data
 boolean newData = false; //Variable for if a new line of data has been receive
 boolean switchState; //Current State of button
 boolean actuated = false; //Previous state of button
+boolean disconnectInit = false; //If HM-10 power cycle has been initiated
+boolean debug_Mode = false; //Used to keep track of if in debug mode.  Debug mode doesn't automatically disconnect
+boolean previousBluetoothState; //Used to keep track of if HM-10 previously had a connection
 
-unsigned long currentMillis;
-unsigned long previousMillis;
-const int debounceInt = 3000;
+unsigned long disconnectMillis; //Used for power cycling the HM-10
+unsigned long previousMillis; //Used for debouncing switch
+const int debounceInt = 3; //Debounce interval for switch
+const int powerCycleTime = 150; //Time (ms) that HM-10 is turned off for in order to remove power
 
 void setup() {
   Serial.begin(9600);
@@ -43,18 +48,23 @@ void setup() {
 }
 
 void loop() {
-  relayState();
-  checkSwitch();
-  //Interface serial outputs
-  serialInterface();
-  //Receive Data
-  recvWithEndMarker();
-  //Check Data for password
-  checkForPassword();
+  relayState(); //Update relay state
+  
+  checkSwitch(); //Check to see if switch has been actuated
+  
+  serialInterface(); //Interface serial outputs
+
+  checkNewConnection(); //Checks for new bluetooth connection
+  
+  recvWithEndMarker(); //Receive Data
+  
+  checkForPassword(); //Check Data for password
+  
+  bluetoothDisconnect(); //Check to see if bluetooth needs to be disconnected
 }
 
 //Interfaces USB serial to bluetooth serial
-void serialInterface(){
+void serialInterface() {
   /*if (mySerial.available()) {
     Serial.write(mySerial.read());
   }*/
@@ -90,14 +100,32 @@ void recvWithEndMarker() {
 }
 
 //Checks if password matches received data, resets newData
-void checkForPassword(){
-  if (newData){
+void checkForPassword() {
+  if (newData) {
+        //Print received data to serial and difference between password
         Serial.println(receivedChars);
         Serial.print("Difference: ");
-        Serial.println(strcmp(receivedChars, PASSWORD));
-    if(strcmp(receivedChars, PASSWORD) == 0){
+        Serial.println(strcmp(receivedChars, password));
+    if (strcmp(receivedChars, password) == 0) {
       changeLightState();
-      mySerial.write("Correct Password\r\n");
+      if (lightState) {
+        mySerial.write("Light Status: On\r\n");
+      }
+      else if (!lightState) {
+        mySerial.write("Light Status: Off\r\n");
+      }
+      if (!debug_Mode) {
+        disconnectInit = true;
+      }
+    }
+    else if (strcmp(receivedChars, debugPWD) == 0) {
+      debug_Mode = !debug_Mode;
+      if (debug_Mode) {
+        mySerial.write("Entering debug mode\r\n");
+      }
+      else if (!debug_Mode) {
+        mySerial.write("Exiting debug mode\r\n");
+      }
     }
     else{
       mySerial.write("Incorrect Password\r\n");
@@ -106,31 +134,59 @@ void checkForPassword(){
   newData = false;
 }
 
+
+void bluetoothDisconnect() {
+  if (disconnectInit) {
+    disconnectInit = false;
+    disconnectMillis = millis();
+  }
+  if (((millis() - disconnectMillis) < powerCycleTime) && ((millis() - disconnectMillis) >= 0)) {
+    digitalWrite(HM10_PWR_PIN, LOW);
+  }
+  else if ((millis() - disconnectMillis) < 0) {
+    disconnectMillis = millis();
+  }
+  else {
+    digitalWrite(HM10_PWR_PIN, HIGH);
+  }
+}
+
 //Changes lightState when called
-void changeLightState(){
+void changeLightState() {
   lightState = !lightState;
   //digitalWrite(13, lightState);
 }
 
 //Switch relay based on lightState
-void relayState(){
+void relayState() {
   digitalWrite(RELAY_PIN, lightState);
 }
 
-void checkSwitch(){
+void checkSwitch() {
   switchState = digitalRead(SWITCH_PIN);
-  currentMillis = millis();
-  if (!switchState){
-    if(!actuated){
+  if (!switchState) {
+    if (!actuated) {
       previousMillis = millis();
-    }
-    if (currentMillis - previousMillis >= debounceInt){
-      changeLightState();
       actuated = true;
     }
+    if ((millis() - previousMillis >= debounceInt) && actuated) {
+      changeLightState();
+    }
   }
-  if (switchState){
+  if (switchState && (millis() - previousMillis >= debounceInt)) {
     actuated = false;
   }
+}
+
+void checkNewConnection() {
+  if(!previousBluetoothState && digitalRead(STATE_PIN)) {
+    if(lightState) {
+      mySerial.write("Light Status: On\r\n");
+    }
+    else {
+      mySerial.write("Light Status: Off\r\n");
+    }
+  }
+  previousBluetoothState = digitalRead(STATE_PIN);
 }
 
