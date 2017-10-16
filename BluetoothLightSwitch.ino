@@ -18,15 +18,23 @@ const byte numChars = 32;
 char receivedChars[numChars]; // an array to store the received data
 boolean newData = false; //Variable for if a new line of data has been receive
 boolean switchState; //Current State of button
-boolean actuated = false; //Previous state of button
+boolean actuated = false; //True when timer has been set
+boolean buttonDown = false; //Used to determine if button has been debounced
 boolean disconnectInit = false; //If HM-10 power cycle has been initiated
 boolean debug_Mode = false; //Used to keep track of if in debug mode.  Debug mode doesn't automatically disconnect
 boolean previousBluetoothState; //Used to keep track of if HM-10 previously had a connection
+boolean connectionTimerSet = false; //Used to determine if connection timer has been set
+boolean disconnectTimerSet = false; //Used to determine if the disconnect timer has been set
 
 unsigned long disconnectMillis; //Used for power cycling the HM-10
 unsigned long previousMillis; //Used for debouncing switch
+unsigned long connectionTimer; //Used to wait for connection to give status
+unsigned long disconnectTimer; //Used to wait until bluetooth serial messages have been sent before disconnecting
+
 const int debounceInt = 3; //Debounce interval for switch
 const int powerCycleTime = 150; //Time (ms) that HM-10 is turned off for in order to remove power
+const int connectionTime = 200; //Wait interval before sending status upon connection
+const int disconnectTime = 200; //Wait interval before disconnection
 
 void setup() {
   Serial.begin(9600);
@@ -54,7 +62,7 @@ void loop() {
   
   serialInterface(); //Interface serial outputs
 
-  checkNewConnection(); //Checks for new bluetooth connection
+  checkConnection(); //Checks for bluetooth connection or disconnection
   
   recvWithEndMarker(); //Receive Data
   
@@ -115,6 +123,7 @@ void checkForPassword() {
         mySerial.write("Light Status: Off\r\n");
       }
       if (!debug_Mode) {
+        mySerial.write("Disconnecting");
         disconnectInit = true;
       }
     }
@@ -136,7 +145,12 @@ void checkForPassword() {
 
 
 void bluetoothDisconnect() {
-  if (disconnectInit) {
+  if (disconnectInit && !disconnectTimerSet) {
+    disconnectTimer = millis();
+    disconnectTimerSet = true;
+  }
+  if (disconnectTimerSet && ((millis() - disconnectTimer) >= disconnectTime)){
+    disconnectTimerSet = false;
     disconnectInit = false;
     disconnectMillis = millis();
   }
@@ -169,24 +183,34 @@ void checkSwitch() {
       previousMillis = millis();
       actuated = true;
     }
-    if ((millis() - previousMillis >= debounceInt) && actuated) {
+    if ((millis() - previousMillis >= debounceInt) && actuated && !buttonDown) {
       changeLightState();
+      buttonDown = true;
     }
   }
   if (switchState && (millis() - previousMillis >= debounceInt)) {
     actuated = false;
+    buttonDown = false;
   }
 }
 
-void checkNewConnection() {
-  if(!previousBluetoothState && digitalRead(STATE_PIN)) {
-    if(lightState) {
-      mySerial.write("Light Status: On\r\n");
-    }
-    else {
-      mySerial.write("Light Status: Off\r\n");
-    }
+void checkConnection() {
+  if(previousBluetoothState && !digitalRead(STATE_PIN)){
+    debug_Mode = false; //Reset debug mode if client disconnects
   }
+  else if(!previousBluetoothState && digitalRead(STATE_PIN)) {
+    connectionTimer = millis();
+    connectionTimerSet = true;
+  }
+  if (connectionTimerSet && ((millis() - connectionTimer) >= connectionTime)){
+      connectionTimerSet = false;
+      if (lightState) {
+        mySerial.write("Light Status: On\r\n");
+      }
+      else {
+        mySerial.write("Light Status: Off\r\n");
+      }
+    }
   previousBluetoothState = digitalRead(STATE_PIN);
 }
 
