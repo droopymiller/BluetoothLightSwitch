@@ -1,8 +1,8 @@
 #include <SoftwareSerial.h>
 
-#define KEY_PIN 0 //Used for Reseting HM-11
-#define RELAY_PIN 3 //Used to control the relay
-#define SWITCH_PIN 12 //Input for switch
+#define KEY_PIN 5 //Used for Reseting HM-11
+#define RELAY_PIN 4 //Used to control the relay
+#define SWITCH_PIN 3 //Input for switch
 
 // HM-10 module pins
 #define STATE_PIN 0
@@ -26,10 +26,8 @@ boolean previousBluetoothState; //Used to keep track of if HM-10 previously had 
 boolean connectionTimerSet = false; //Used to determine if connection timer has been set
 boolean disconnectTimerSet = false; //Used to determine if the disconnect timer has been set
 
-unsigned long disconnectMillis; //Used for power cycling the HM-10
 unsigned long previousMillis; //Used for debouncing switch
 unsigned long connectionTimer; //Used to wait for connection to give status
-unsigned long disconnectTimer; //Used to wait until bluetooth serial messages have been sent before disconnecting
 
 const int debounceInt = 3; //Debounce interval for switch
 const int powerCycleTime = 150; //Time (ms) that HM-10 is turned off for in order to remove power
@@ -46,7 +44,10 @@ void setup() {
   pinMode(SWITCH_PIN, INPUT);
   pinMode(STATE_PIN, INPUT);
   
-  digitalWrite(SWITCH_PIN, HIGH); //Enable internal pullup resistor, reads LOW when closed
+  //Enable internal pullup resistor, reads LOW when closed
+  digitalWrite(SWITCH_PIN, HIGH);
+  digitalWrite(STATE_PIN, HIGH);
+  //Resets when low
   digitalWrite(KEY_PIN, HIGH);
 
 }
@@ -126,23 +127,14 @@ void checkForPassword() {
 
 
 void bluetoothDisconnect() {
-  if (disconnectInit && !disconnectTimerSet) {
-    disconnectTimer = millis();
-    disconnectTimerSet = true;
-  }
-  if (disconnectTimerSet && ((millis() - disconnectTimer) >= disconnectTime)){
-    disconnectTimerSet = false;
-    disconnectInit = false;
-    disconnectMillis = millis();
-  }
-  if (((millis() - disconnectMillis) < powerCycleTime) && ((millis() - disconnectMillis) >= 0)) {
-    digitalWrite(KEY_PIN, LOW);
-  }
-  else if ((millis() - disconnectMillis) < 0) {
-    disconnectMillis = millis();
-  }
-  else {
-    digitalWrite(KEY_PIN, HIGH);
+  if (disconnectInit) {
+    if(digitalRead(STATE_PIN)) {
+       digitalWrite(KEY_PIN, LOW);
+    }
+    else {
+      digitalWrite(KEY_PIN, HIGH);
+      disconnectInit = false;
+    }
   }
 }
 
@@ -174,6 +166,8 @@ void checkSwitch() {
   }
 }
 
+//Checks for new connection, sends light status upon new connection
+//Disables debug_mode upon disconnection
 void checkConnection() {
   if(previousBluetoothState && !digitalRead(STATE_PIN)){
     debug_Mode = false; //Reset debug mode if client disconnects
