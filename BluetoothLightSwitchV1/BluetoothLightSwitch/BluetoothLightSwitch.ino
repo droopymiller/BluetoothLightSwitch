@@ -11,8 +11,8 @@
 SoftwareSerial mySerial(RX_PIN, TX_PIN); // RX, TX
 
 boolean lightState = false;
-char password[21] = "manmilk\r";
-char debugPWD[21] = "RAWDOG\r";
+char password[21] = "PWD1\r";
+char debugPWD[21] = "DEBUG1\r";
 
 const byte numChars = 32;
 char receivedChars[numChars]; // an array to store the received data
